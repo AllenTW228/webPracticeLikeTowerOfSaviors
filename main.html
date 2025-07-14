@@ -1,0 +1,77 @@
+<style>
+  #board {
+    display: grid;
+    grid-template-columns: repeat(6, 60px);
+    grid-template-rows: repeat(5, 60px);
+    gap: 2px;
+    user-select: none;
+  }
+  .cell {
+    width: 60px;
+    height: 60px;
+    background-color: #eee;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .cell img {
+    width: 50px;
+    height: 50px;
+    pointer-events: none;
+  }
+</style>
+
+<div id="board"></div>
+
+<script>
+  const board = document.getElementById("board");
+  const rows = 5;
+  const cols = 6;
+  const icons = ["🔥", "💧", "🌱", "⚡", "💎"];
+
+  let grid = [];
+  let selected = null;
+
+  function createBoard() {
+    for (let r = 0; r < rows; r++) {
+      grid[r] = [];
+      for (let c = 0; c < cols; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        const icon = icons[Math.floor(Math.random() * icons.length)];
+        cell.textContent = icon;
+        cell.dataset.row = r;
+        cell.dataset.col = c;
+        board.appendChild(cell);
+        grid[r][c] = cell;
+      }
+    }
+  }
+
+  let dragging = false;
+
+  board.addEventListener("mousedown", (e) => {
+    if (e.target.classList.contains("cell")) {
+      dragging = true;
+      selected = e.target;
+    }
+  });
+
+  board.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    if (target && target.classList.contains("cell") && target !== selected) {
+      // 交換內容
+      const temp = selected.textContent;
+      selected.textContent = target.textContent;
+      target.textContent = temp;
+      selected = target;
+    }
+  });
+
+  document.addEventListener("mouseup", () => {
+    dragging = false;
+  });
+
+  createBoard();
+</script>
