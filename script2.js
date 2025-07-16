@@ -1,5 +1,5 @@
 class Board {
-    constructor(boardElement, rows, cols) {
+    constructor(boardElement, rows, cols, timeLifeBar) {
         this.boardElement = boardElement;
         this.rows = rows;
         this.cols = cols;
@@ -15,6 +15,8 @@ class Board {
         };
         this.init(); // 初始化
         this.setupDragHandlers();// 為cells設定滑鼠事件監聽
+        this.timeLifeBar = timeLifeBar;
+        this.onMouseUp = null;
     }
     static Cell = class {
         constructor(row, col, icon, el) {
@@ -66,6 +68,7 @@ class Board {
       const onMouseDown = (cell) => {
         selected = cell;
         cell.el.classList.add("dragging"); // ✅ 加入 dragging 動畫效果
+        this.timeLifeBar.changeMode("battle"); // 按下滑鼠則進入戰鬥模式
       };
 
       const onMouseEnter = (target) => {
@@ -82,11 +85,14 @@ class Board {
           selected.el.classList.remove("dragging"); // ✅ 結束拖曳時移除動畫
           selected = null;
         }
+        this.timeLifeBar.changeMode("idle"); // 鬆開滑鼠則進入idle模式
         // 做連鎖消除用
         this.processChain();
         // 為cells 加入滑鼠事件
         // this.setupDragHandlers();
       }
+      // ✅ 將 onMouseUp 存成實體屬性
+      this.onMouseUp = onMouseUp;
 
       // 為所有 cell 註冊事件
       for (let r = 0; r < this.rows; r++) {
@@ -112,7 +118,6 @@ class Board {
             }
         }
     }
-
     // 方向翻轉（禁止從反方向再擴散）；ex：[1,0,0,0] -> [0,1,1,1]；way是來源方向；[下]
     invertWay(way) {
       return way.map(val => val === 1 ? 0 : 1);
@@ -163,11 +168,8 @@ class Board {
       //console.log('dfs：',[r,c]);
       // 🔍 先檢查是否上下或左右都與自己一樣
       const up    = this.isInBounds(r - 1, c) && this.grid[r - 1][c].icon === icon;
-
       const down  = this.isInBounds(r + 1, c) && this.grid[r + 1][c].icon === icon;
-      
       const left  = this.isInBounds(r, c - 1) && this.grid[r][c - 1].icon === icon;
-      
       const right = this.isInBounds(r, c + 1) && this.grid[r][c + 1].icon === icon;
      
       
@@ -183,17 +185,16 @@ class Board {
 
       if (hasVerticalMatch) {
         matchedSet.add(`${r - 1},${c}`);
-        console.log('matchedSet1：',matchedSet);
+        //console.log('matchedSet1：',matchedSet);
         matchedSet.add(`${r + 1},${c}`);
-        console.log('matchedSet2：',matchedSet);
+        //console.log('matchedSet2：',matchedSet);
       }
       if (hasHorizontalMatch) {
         matchedSet.add(`${r},${c - 1}`);
-        console.log('matchedSet3：',matchedSet);
+        //console.log('matchedSet3：',matchedSet);
         matchedSet.add(`${r},${c + 1}`);
-        console.log('matchedSet4：',matchedSet);
+        //console.log('matchedSet4：',matchedSet);
       }
-    //看要不改存陣列(若用set，則不能用陣列)
 
       // 🔁 翻轉方向，避免往回擴散
       const newWay = this.invertWay(way);
@@ -243,14 +244,91 @@ class Board {
     this.resetVisited(); // 重置cells visited = false
     }
   }
+class TimeLifeBar {
+  constructor(maxLife = 1000, maxTime = 10, containerId) {
+    this.container = document.getElementById(containerId);
+    this.maxLife = maxLife;
+    this.life = maxLife; // 生命值（idle 模式使用）
+    this.maxTime = maxTime;
+    this.time = maxTime; // 倒數秒數（battle 模式使用）
+    this.mode = "idle";
+    this.timer = null;
+    this.board = null;
 
+    // 取得現有 DOM 元素
+    this.timerBar = document.getElementById("timer-bar");
+
+    this.updateUI();
+  }
+  setBoard(board){
+    this.board = board;
+  }
+  updateUI() {
+    if (this.mode === "idle") {
+      const lifePercent = (this.life / this.maxLife) * 100;
+      console.log(lifePercent);
+      this.timerBar.style.width = `${lifePercent}%`;
+      this.timerBar.style.backgroundColor = this.life <= 0 ? "#555" : "#00cc66"; // 綠色生命條
+    }
+
+    if (this.mode === "battle") {
+      const timePercent = (this.time / this.maxTime) * 100;
+      console.log('this.maxTime：',this.maxTime);
+      console.log('this.time ：',this.time );
+      console.log(timePercent);
+      this.timerBar.style.width = `${timePercent}%`;
+      this.timerBar.style.backgroundColor = "#e74c3c"; // 紅色倒數條
+    }
+  }
+
+   changeMode(mode) {
+    this.mode = mode;
+    if (this.timer) clearInterval(this.timer);
+
+    if (mode === "idle") {
+      this.updateUI(); // 顯示生命值
+    } else if (mode === "battle") {
+      this.time = this.maxTime; // 每次 battle 重新倒數
+      this.startCountdown(); // 顯示倒數
+    }
+  }
+
+  startCountdown() {
+    this.timer = setInterval(() => {
+      this.time -= 1;
+      if (this.time <= 0) {
+        this.time = 0;
+        this.changeMode("idle"); // 倒數結束後自動轉 idle
+        if (this.board?.onMouseUp) {
+        this.board.onMouseUp(); // 👈 強制觸發 mouseUp 邏輯
+      }
+      }
+      this.updateUI();
+    }, 1000); // 每 1000ms 倒數 1 
+  }
+
+  recoverLife(amount) {
+    this.life = Math.min(this.life + amount, this.maxLife);
+    this.updateUI();
+  }
+
+  decreaseLife(amount) {
+    this.life = Math.max(this.life - amount, 0);
+    this.updateUI();
+  }
+
+  detectLife() {
+    return this.life <= 0;
+  }
+}
 
 
 
 // main
 const boardEl = document.getElementById("board");
-const gameBoard = new Board(boardEl, 5, 6);
-
+const timeLifeBar = new TimeLifeBar(1000, 10, "time-life-container");
+const gameBoard = new Board(boardEl, 5, 6,timeLifeBar);
+timeLifeBar.setBoard(gameBoard);
 function updateTimerBarColor() {
   // 設定時間條顏色 (綠→黃→紅)
   const ratio = currentTime / gameDuration;
