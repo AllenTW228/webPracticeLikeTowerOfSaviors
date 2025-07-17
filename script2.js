@@ -1,5 +1,5 @@
 class Board {
-    constructor(boardElement, rows, cols, timeLifeBar) {
+    constructor(boardElement, rows, cols, timeLifeBar, comboBlock) {
         this.boardElement = boardElement;
         this.rows = rows;
         this.cols = cols;
@@ -16,6 +16,7 @@ class Board {
         this.init(); // 初始化
         this.setupDragHandlers();// 為cells設定滑鼠事件監聽
         this.timeLifeBar = timeLifeBar;
+        this.comboBlock = comboBlock;
         this.currentCell = null;
     }
     static Cell = class {
@@ -70,6 +71,7 @@ class Board {
         this.currentCell = cell; // class Board 中央管理追蹤(或許可與selected 合併留一)
         cell.el.classList.add("dragging"); // ✅ 加入 dragging 動畫效果
         this.timeLifeBar.changeMode("battle"); // 按下滑鼠則進入戰鬥模式
+        this.comboBlock.resetCombo();
       };
 
       const onMouseEnter = (target) => {
@@ -90,9 +92,16 @@ class Board {
         }
         this.timeLifeBar.changeMode("idle"); // 鬆開滑鼠則進入idle模式
         // 做連鎖消除用
+        console.log('進入processChain');
         await this.processChain();
         // 為cells 加入滑鼠事件
         // this.setupDragHandlers();
+        // 等待動畫時間 0.5 秒
+        await new Promise(resolve => setTimeout(resolve, 200));
+        console.log('out processChain => unshow');
+        this.comboBlock.unShow(); // chain結束後執行
+        console.log('out unshow => reset');
+        //this.comboBlock.resetCombo(); // chain結束後執行
       }
 
       // 為所有 cell 註冊事件
@@ -148,9 +157,18 @@ class Board {
         }
       }
       // 🔥 清除 matched 所有格子(未分組)
-      console.log(1,this.deleteGroup)
+      let combo = 0; // combo 計數器初始化
+      let length = this.deleteGroup.length
       for (const posSet of this.deleteGroup) {
-        for(const pos of posSet){
+        combo++;  // 每處理一組 combo +1
+
+        // 顯示 combo，假設你有一個 comboBlock 以及 UI 更新方法 以及 this.deleteGrop.length >0
+        if ( length ) {
+          console.log('change combo',length);
+          await comboBlock.increaseCombo(1);
+        }
+        
+        for (const pos of posSet) {
           const [r, c] = pos.split(",").map(Number);
           this.grid[r][c].setIcon(null);
           this.grid[r][c].el.classList.add("clearing");
@@ -162,7 +180,6 @@ class Board {
       return this.deleteGroup.length
     }
     dfs(r, c, icon, way, matchedSet) { // deleteMatch 作為擴散搜尋用的
-      console.log('dfs：',[r,c]);
       if (!this.isInBounds(r, c)) return 1;
       if (this.grid[r][c].visited) return 2;
       if (this.grid[r][c].icon !== icon) return 3;
@@ -173,7 +190,6 @@ class Board {
       const left  = this.isInBounds(r, c - 1) && this.grid[r][c - 1].icon === icon;
       const right = this.isInBounds(r, c + 1) && this.grid[r][c + 1].icon === icon;
      
-      
       const hasVerticalMatch = up && down;
       const hasHorizontalMatch = left && right;
 
@@ -199,7 +215,7 @@ class Board {
 
       // 🔁 翻轉方向，避免往回擴散
       const newWay = this.invertWay(way);
-      console.log('newWay',newWay);
+      //console.log('newWay',newWay);
       if (newWay[0]) this.dfs(r , c+1, icon, this.srcDIRS.left, matchedSet) // 向右
       if (newWay[1]) this.dfs(r , c-1, icon, this.srcDIRS.right, matchedSet)// 向左
       if (newWay[2]) this.dfs(r-1, c , icon, this.srcDIRS.down, matchedSet) // 向上
@@ -236,12 +252,14 @@ class Board {
     async processChain() { // 做連鎖消除用
       let matchedCount = await this.deleteMatch();
       if (matchedCount>0) {
+        console.log('processchain 中')
+        this.comboBlock.show();
         await setTimeout(async () => {
             await this.dropGems();
             this.resetVisited(); // 重置cells visited = false
             await setTimeout(async() => await this.processChain(), 600);
         }, 600);
-      }
+      } 
     this.resetVisited(); // 重置cells visited = false
     }
     async stopDrag() {
@@ -328,56 +346,74 @@ class TimeLifeBar {
   }
 }
 class ComboBlock {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.width = 120;
-    this.height = 60;
-    this.text = "0 Combo!";
-    this.font = "bold 32px Arial";
-    this.color = "#ece6e6";
-    this.opacity = 0;
+  constructor(comboBlockEl) {
+    this.comboBlockEl = comboBlockEl;
+    this.x = window.innerWidth / 2;
+    this.y = 300;
+    this.opacity = 1;
     this.visible = false;
     this.currentCombo = 0;
+    this.lifetime = 120;
   }
+
   show() {
-    this.text = `${this.currentCombo} Combo!`;
-    this.opacity = 1.0;
+    this.y = 300;
+    this.opacity = 1;
+    this.lifetime = 120; // 60 frames = 1 second
+
+    this.comboBlockEl.textContent = `${this.currentCombo} Combo!`;
+    this.comboBlockEl.style.opacity = 1;
+    this.comboBlockEl.style.transform = `translateX(-50%) translateY(${this.y}px)`;
     this.visible = true;
-    this.y = 300; // 重設位置
+    requestAnimationFrame(() => this.update());
   }
-  increaseCombo(variable) {
-    this.currentCombo += variable;
-  }
-  restCombo() {
-    this.currentCombo = 0;
-  }
-  update() {
+
+  async update() {
     if (!this.visible) return;
-    this.y -= 1;
-    this.opacity -= 0.02;
-    if (this.opacity <= 0) {
-      this.visible = false;
-      this.opacity = 0;
+
+    this.y -= 0.05;
+    this.opacity -= 0.005;
+    this.lifetime--;
+
+    this.comboBlockEl.style.opacity = this.opacity;
+    this.comboBlockEl.style.transform = `translateX(-50%) translateY(${this.y}px)`;
+
+    if (this.lifetime <= 0 || this.opacity <= 0) { // 執行原lifetime次 則 unhsow()
+      this.unShow();
+    } else {
+      await requestAnimationFrame(async() => await this.update());
     }
   }
-  draw(ctx) {
-    if (!this.visible) return;
-    ctx.save();
-    ctx.globalAlpha = this.opacity;
-    ctx.font = this.font;
-    ctx.fillStyle = this.color;
-    ctx.fillText(this.text, this.x, this.y);
-    ctx.restore();
+
+  unShow() {
+    this.visible = false;
+    this.comboBlockEl.style.opacity = 0;
+    requestAnimationFrame(() => this.update());
+  }
+
+  async resetCombo() {
+    this.currentCombo = 0;
+    requestAnimationFrame(() => this.update());
+  }
+  async increaseCombo (variable) {
+    this.currentCombo += variable;
+    requestAnimationFrame(() => this.update());
   }
 }
-
 
 // main
 const boardEl = document.getElementById("board");
 const timeLifeBar = new TimeLifeBar(1000, 10, "time-life-container");
-const gameBoard = new Board(boardEl, 5, 6,timeLifeBar);
+const comboBlockEl = document.getElementById("Combo-Block");
+const comboBlock = new ComboBlock(comboBlockEl, 150, 300,);
+const gameBoard = new Board(boardEl, 5, 6,timeLifeBar, comboBlock);
 timeLifeBar.setBoard(gameBoard);
 
+gameLoop();  // 啟動遊戲迴圈
 
-
+function gameLoop() {
+  if (comboBlock.visible) {
+    comboBlock.update();
+    requestAnimationFrame(gameLoop);
+  }
+}

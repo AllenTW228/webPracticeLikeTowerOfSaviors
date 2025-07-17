@@ -58,3 +58,14 @@ body {
   background-color: #e74c3c;
   transition: width 0.3s, background-color 0.3s;
 }
+
+#Combo-Block {
+  position: absolute;
+  left: 20%;
+  transform: translateX(-50%) translateY(0);
+  font: bold 32px Arial;
+  color: #ece6e6;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
