@@ -17,6 +17,7 @@ class Board {
         this.setupDragHandlers();// 為cells設定滑鼠事件監聽
         this.timeLifeBar = timeLifeBar;
         this.onMouseUp = null;
+        this.currentCell = null;
     }
     static Cell = class {
         constructor(row, col, icon, el) {
@@ -243,6 +244,12 @@ class Board {
       }
     this.resetVisited(); // 重置cells visited = false
     }
+    stopDrag() {
+      this.currentCell.dispatchEvent(new MouseEvent("mouseup", {
+        bubbles: true,
+        cancelable: true,
+      }));
+    }
   }
 class TimeLifeBar {
   constructor(maxLife = 1000, maxTime = 10, containerId) {
@@ -300,7 +307,7 @@ class TimeLifeBar {
         this.time = 0;
         this.changeMode("idle"); // 倒數結束後自動轉 idle
         if (this.board?.onMouseUp) {
-        this.board.onMouseUp(); // 👈 強制觸發 mouseUp 邏輯
+        this.board.stopDrag(); // 👈 強制停止滑鼠拖曳，觸發 mouseUp
       }
       }
       this.updateUI();

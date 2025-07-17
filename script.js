@@ -62,7 +62,6 @@ function randomIcon() { // 從 icons 中隨機選一個符號（用來填格子�
   return icons[Math.floor(Math.random() * icons.length)];
 }
 
-
 function createBoard() {
   for (let r = 0; r < rows; r++) {
     cells[r] = [];
@@ -98,25 +97,33 @@ function swap(r1, c1, r2, c2) { // 交換兩個格子的內容，包含邏輯上
 function detectMatches() {
   const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
   const groups = [];
-
-  function dfs(r, c, icon, group) {
+  function isInBounds(r, c) {
+    return r >= 0 && r < rows && c >= 0 && c < cols;
+  } 
+  function dfs(r, c, icon, group) { 
     // 範圍外、已拜訪、不同 icon：跳過
-    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+    if (!isInBounds(r, c)) return; 
     if (visited[r][c]) return;
-    if (grid[r][c] !== icon) return;
-
+    if (grid[r][c] !== icon) return; // 改成上下、左右icon不同、上下左右2個icon不同者
+ 
     visited[r][c] = true;
-    group.push([r, c]);
-
-    dfs(r + 1, c, icon, group);
+    group.push([r, c]); //group 是一個set(不存重複值)
+    // 根據way方向做if & 其方向是否同色
+    // h
+      // check color
+    dfs(r + 1, c, icon, group); 
+      // check color
     dfs(r - 1, c, icon, group);
+    // v
+      // check color
     dfs(r, c + 1, icon, group);
+      // check color
     dfs(r, c - 1, icon, group);
   }
-
+  // 以下要大改
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (!visited[r][c] && grid[r][c]) {
+      if (!visited[r][c] && grid[r][c]) { // cell有visited 屬性
         const group = [];
         dfs(r, c, grid[r][c], group);
         if (group.length >= 3 && isValidGroup(group)) {
