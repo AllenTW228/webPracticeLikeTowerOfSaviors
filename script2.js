@@ -16,7 +16,6 @@ class Board {
         this.init(); // 初始化
         this.setupDragHandlers();// 為cells設定滑鼠事件監聽
         this.timeLifeBar = timeLifeBar;
-        this.onMouseUp = null;
         this.currentCell = null;
     }
     static Cell = class {
@@ -68,6 +67,7 @@ class Board {
 
       const onMouseDown = (cell) => {
         selected = cell;
+        this.currentCell = cell; // class Board 中央管理追蹤(或許可與selected 合併留一)
         cell.el.classList.add("dragging"); // ✅ 加入 dragging 動畫效果
         this.timeLifeBar.changeMode("battle"); // 按下滑鼠則進入戰鬥模式
       };
@@ -78,22 +78,22 @@ class Board {
           selected.el.classList.remove("dragging");
           target.el.classList.add("dragging");
           selected = target;
+          this.currentCell = target; // class Board 中央管理追蹤(或許可與selected 合併留一)
         }
       };
 
-      const onMouseUp = () => {
+      const onMouseUp = async () => {
         if (selected) {
           selected.el.classList.remove("dragging"); // ✅ 結束拖曳時移除動畫
           selected = null;
+          
         }
         this.timeLifeBar.changeMode("idle"); // 鬆開滑鼠則進入idle模式
         // 做連鎖消除用
-        this.processChain();
+        await this.processChain();
         // 為cells 加入滑鼠事件
         // this.setupDragHandlers();
       }
-      // ✅ 將 onMouseUp 存成實體屬性
-      this.onMouseUp = onMouseUp;
 
       // 為所有 cell 註冊事件
       for (let r = 0; r < this.rows; r++) {
@@ -236,19 +236,21 @@ class Board {
     async processChain() { // 做連鎖消除用
       let matchedCount = await this.deleteMatch();
       if (matchedCount>0) {
-        setTimeout(() => {
-            this.dropGems();
+        await setTimeout(async () => {
+            await this.dropGems();
             this.resetVisited(); // 重置cells visited = false
-            setTimeout(() => this.processChain(), 600);
+            await setTimeout(async() => await this.processChain(), 600);
         }, 600);
       }
     this.resetVisited(); // 重置cells visited = false
     }
-    stopDrag() {
-      this.currentCell.dispatchEvent(new MouseEvent("mouseup", {
+    async stopDrag() {
+      console.log('stopDrag：currentCell=',this.currentCell);
+      this.currentCell.el.dispatchEvent(new MouseEvent("mouseup", {
         bubbles: true,
         cancelable: true,
       }));
+      this.currentCell = null; // class Board 中央管理追蹤(或許可與selected 合併留一)
     }
   }
 class TimeLifeBar {
@@ -287,7 +289,6 @@ class TimeLifeBar {
       this.timerBar.style.backgroundColor = "#e74c3c"; // 紅色倒數條
     }
   }
-
    changeMode(mode) {
     this.mode = mode;
     if (this.timer) clearInterval(this.timer);
@@ -300,15 +301,13 @@ class TimeLifeBar {
     }
   }
 
-  startCountdown() {
-    this.timer = setInterval(() => {
+  async startCountdown() {
+    this.timer = await setInterval(async () => {
       this.time -= 1;
       if (this.time <= 0) {
         this.time = 0;
         this.changeMode("idle"); // 倒數結束後自動轉 idle
-        if (this.board?.onMouseUp) {
-        this.board.stopDrag(); // 👈 強制停止滑鼠拖曳，觸發 mouseUp
-      }
+        await this.board.stopDrag(); // 👈 強制停止滑鼠拖曳，觸發 mouseUp
       }
       this.updateUI();
     }, 1000); // 每 1000ms 倒數 1 
@@ -328,7 +327,50 @@ class TimeLifeBar {
     return this.life <= 0;
   }
 }
-
+class ComboBlock {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.width = 120;
+    this.height = 60;
+    this.text = "0 Combo!";
+    this.font = "bold 32px Arial";
+    this.color = "#ece6e6";
+    this.opacity = 0;
+    this.visible = false;
+    this.currentCombo = 0;
+  }
+  show() {
+    this.text = `${this.currentCombo} Combo!`;
+    this.opacity = 1.0;
+    this.visible = true;
+    this.y = 300; // 重設位置
+  }
+  increaseCombo(variable) {
+    this.currentCombo += variable;
+  }
+  restCombo() {
+    this.currentCombo = 0;
+  }
+  update() {
+    if (!this.visible) return;
+    this.y -= 1;
+    this.opacity -= 0.02;
+    if (this.opacity <= 0) {
+      this.visible = false;
+      this.opacity = 0;
+    }
+  }
+  draw(ctx) {
+    if (!this.visible) return;
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    ctx.font = this.font;
+    ctx.fillStyle = this.color;
+    ctx.fillText(this.text, this.x, this.y);
+    ctx.restore();
+  }
+}
 
 
 // main
@@ -336,47 +378,6 @@ const boardEl = document.getElementById("board");
 const timeLifeBar = new TimeLifeBar(1000, 10, "time-life-container");
 const gameBoard = new Board(boardEl, 5, 6,timeLifeBar);
 timeLifeBar.setBoard(gameBoard);
-function updateTimerBarColor() {
-  // 設定時間條顏色 (綠→黃→紅)
-  const ratio = currentTime / gameDuration;
-  let r, g, b = 0;
-  if (ratio > 0.5) {
-    r = Math.floor(255 * (1 - (ratio - 0.5) * 2));
-    g = 255;
-  } else {
-    r = 255;
-    g = Math.floor(255 * (ratio * 2));
-  }
-  timerBar.style.backgroundColor = `rgb(${r},${g},${b})`;
-}
 
-// 重置計時器（但不啟動倒數）
-function resetTimer() {
-  if (timerInterval) {
-    clearInterval(timerInterval);
-    timerInterval = null;
-  }
-  currentTime = gameDuration;
-  timerBar.style.width = "100%";
-  updateTimerBarColor();
-}
 
-// 開始倒數（需先呼叫 resetTimer 重置時間）
-function runTimer() {
-  if (timerInterval) clearInterval(timerInterval);
-
-  timerInterval = setInterval(() => {
-    currentTime--;
-    const percent = (currentTime / gameDuration) * 100;
-    timerBar.style.width = percent + "%";
-    updateTimerBarColor();
-
-    if (currentTime <= 0) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-      console.log("時間到! 強制消除");
-      processChain(); // 時間到強制執行消除
-    }
-  }, 1000);
-}
 
